@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
-	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"log"
+	"fmt"
 	"strconv"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
 type Task struct {
@@ -40,33 +42,47 @@ func main() {
 		Something: []int{35, 45, 20, 44, 15},
 	}
 
-	printErrors(t.Validate())
-}
-
-func printErrors(err error) {
-	if err == nil {
-		return
-	}
+	err := t.Validate()
 
 	var validationErrors validation.Errors
-	if !errors.As(err, &validationErrors) {
-		return
+	if errors.As(err, &validationErrors) {
+		errs := newValidationErrors(validationErrors, "")
+		b, _ := json.MarshalIndent(errs, "", "   ")
+		fmt.Println(string(b))
 	}
-
-	printValidationErrors(validationErrors, "")
 }
 
-func printValidationErrors(errs validation.Errors, prefix string) {
+type ValidationError struct {
+	Field   string                 `json:"field"`
+	Code    string                 `json:"code"`
+	Params  map[string]interface{} `json:"params,omitempty"`
+	Message string                 `json:"message"`
+}
+
+func newValidationError(field string, err validation.Error) ValidationError {
+	return ValidationError{
+		Field:   field,
+		Code:    err.Code(),
+		Params:  err.Params(),
+		Message: err.Error(),
+	}
+}
+
+func newValidationErrors(errs validation.Errors, prefix string) []ValidationError {
+	var result []ValidationError
+
 	for key, err := range errs {
-		prefixAndKey := joinPrefixAndKey(prefix, key)
+		field := joinPrefixAndKey(prefix, key)
 
 		switch t := err.(type) {
 		case validation.Errors:
-			printValidationErrors(t, prefixAndKey)
+			result = append(result, newValidationErrors(t, field)...)
 		case validation.Error:
-			log.Println(prefixAndKey, t.Error(), t.Code(), t.Params())
+			result = append(result, newValidationError(field, t))
 		}
 	}
+
+	return result
 }
 
 func joinPrefixAndKey(prefix, key string) string {
